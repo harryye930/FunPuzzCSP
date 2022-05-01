@@ -29,196 +29,175 @@ The grid-only models do not need to encode the cage constraints.
     - Together with FunPuzz cage constraints.
 
 '''
-import copy
 
 from cspbase import *
 import itertools
 
 
 def binary_ne_grid(fpuzz_grid):
-    n = fpuzz_grid[0][0]
+    board_length = fpuzz_grid[0][0]
 
-    vars = []
-    for i in range(n*n):
-        new_var = Variable(i, list(range(1, n+1)))
-        vars.append(new_var)
-    vars_list_of_list = list_to_matrix(vars, n)
+    variable_domain = [i for i in range(1, board_length + 1)]
+    variable_list = [[Variable("element {}{}".format(row, column), variable_domain)
+                      for column in range(board_length)]
+                     for row in range(board_length)]
 
-    cons = []
-    for vi in range(1, n+1):
-        for vj in range(vi+1, n+1):
-            con = Constraint("C(v{}, v{})".format(vi, vj), [vars[vi], vars[vj]])
-            sat_tuples = []
-            all_combo = itertools.product(list(range(1, n+1)), list(range(1, n+1)))
-            for t in all_combo:
-                if t[0] != t[1]:
-                    sat_tuples.append(t)
-            con.add_satisfying_tuples(sat_tuples)
-            cons.append(con)
-    csp = CSP("{} by {} binary non-equal".format(n, n), vars)
-    for c in cons:
-        csp.add_constraint(c)
-    return csp, vars_list_of_list
+    coor = [i for i in range(board_length)]
+    coordinates = itertools.product(coor, coor)
+    all_satisfying_pairs = pair_distinct_pairs(board_length)
+    constraints = []
+    variable_list_flat = []
+    for coordinate in coordinates:
+        vertic = coordinate[0]
+        horizon = coordinate[1]
+        curr_variable = variable_list[vertic][horizon]
+        variable_list_flat.append(curr_variable)
+
+        for further_column in range(horizon + 1, board_length):
+            assigned_variable = variable_list[vertic][further_column]
+            constraint_name = "{}{} + {}{}".format(vertic, horizon, vertic, further_column)
+            new_constraint = Constraint(constraint_name, [curr_variable, assigned_variable])
+            new_constraint.add_satisfying_tuples(tuple(all_satisfying_pairs.copy()))
+            constraints.append(new_constraint)
+
+        for further_row in range(vertic + 1, board_length):
+            assigned_variable = variable_list[further_row][horizon]
+            constraint_name = "{}{} + {}{}".format(vertic, horizon, further_row, horizon)
+            new_constraint = Constraint(constraint_name, [curr_variable, assigned_variable])
+            new_constraint.add_satisfying_tuples(tuple(all_satisfying_pairs.copy()))
+            constraints.append(new_constraint)
+
+    new_csp = CSP("{} by {} binary non-equal".format(board_length, board_length), variable_list_flat)
+    for c in constraints:
+        new_csp.add_constraint(c)
+    return new_csp, variable_list
 
 
-def list_to_matrix(lst, n):
+def list_to_matrix(lst, board_length):
     result = []
-    for i in range(n):
+    for i in range(board_length):
         row = []
-        for j in range(n):
-            index = i*n + j
+        for j in range(board_length):
+            index = i * board_length + j
             row.append(lst[index])
         result.append(row)
     return result
 
 
 def nary_ad_grid(fpuzz_grid):
-    n = fpuzz_grid[0][0]
-    vars = []
-    for i in range(n*n):
-        new_var = Variable(i, list(range(1, n+1)))
-        vars.append(new_var)
-    vars_list_of_list = list_to_matrix(vars, n)
-    cons = []
+    board_length = fpuzz_grid[0][0]
+    variable_domain = [i for i in range(1, board_length + 1)]
+    variable_list = [[Variable("element {}{}".format(row, column), variable_domain)
+                      for column in range(board_length)]
+                     for row in range(board_length)]
 
-    diagonals = find_diagonal_indices(n)
-    for i in range(len(diagonals)):
-        diag_index = diagonals[i]
-        curr_row, curr_col = find_row_and_column(diag_index, n)
-        row_vars, col_vars = find_row_col_vars(curr_row, curr_col, vars)
-        con_row = Constraint("C(row:{})".format(i), row_vars)
-        con_col = Constraint("C(col:{})".format(i), col_vars)
-        sat_tuples = find_all_valid_options(n)
-        con_row.add_satisfying_tuples(sat_tuples.copy())
-        con_col.add_satisfying_tuples(sat_tuples.copy())
-        cons.append(con_row)
-        cons.append(con_col)
-    csp = CSP("{} by {} binary non-equal".format(n, n), vars)
-    for c in cons:
-        csp.add_constraint(c)
-    return csp, vars_list_of_list
+    coor = [i for i in range(board_length)]
+    coordinates = itertools.product(coor, coor)
+    variable_list_flat = []
+    for coordinate in coordinates:
+        vertic = coordinate[0]
+        horizon = coordinate[1]
+        curr_variable = variable_list[vertic][horizon]
+        variable_list_flat.append(curr_variable)
+
+    constraints = []
 
 
-def find_row_and_column(index, n):
-    """
-    >>> find_row_and_column(1, 2)
-    ([0, 1], [1, 3])
-    >>> find_row_and_column(3, 3)
-    ([3, 4, 5], [0, 3, 6])
-    """
-    flag = False
-    for row_num in range(n):
-        for col_num in range(n):
-            curr_index = row_num * n + col_num
-            if index == curr_index:
-                flag = True
-                break
-        if flag:
-            break
-    row_indices = []
-    col_indices = []
-    for x in range(n):
-        index_row = row_num * n + x
-        row_indices.append(index_row)
-        index_col = x * n + col_num
-        col_indices.append(index_col)
-    return row_indices, col_indices
+    for i in range(board_length):
+        row_vars, col_vars = find_row_col_vars(i, variable_list)
+        con_row = Constraint("row:{}".format(i), tuple(row_vars))
+        con_col = Constraint("col:{}".format(i), tuple(col_vars))
+        sat_tuples = find_all_valid_options(board_length)
+        con_row.add_satisfying_tuples(tuple(sat_tuples.copy()))
+        con_col.add_satisfying_tuples(tuple(sat_tuples.copy()))
+        constraints.append(con_row)
+        constraints.append(con_col)
+
+    new_csp = CSP("{} by {} binary non-equal".format(board_length, board_length), variable_list_flat)
+    for constraint in constraints:
+        new_csp.add_constraint(constraint)
+    return new_csp, variable_list
 
 
-def find_diagonal_indices(n):
-    """
-    >>> find_diagonal_indices(2)
-    [0, 3]
-    >>> find_diagonal_indices(3)
-    [0, 4, 8]
-    """
-    diagonals = []
-    for num in range(n):
-        diagonals.append(num * n + num)
-    return diagonals
-
-
-def find_row_col_vars(row_vertices, col_vertices, vars):
-    row_vars = []
+def find_row_col_vars(index, variable_list):
+    row_vars = variable_list[index]
     col_vars = []
-    for row_vertex in row_vertices:
-        row_vars.append(vars[row_vertex])
-    for col_vertex in col_vertices:
-        col_vars.append(vars[col_vertex])
+    for rows in variable_list:
+        col_vars.append(rows[index])
     return row_vars, col_vars
 
 
-def find_all_valid_options(n):
-    domain = list(range(1, n+1))
-    lst = []
-    for i in range(n):
-        lst.append(domain.copy())
-    all_combo = itertools.product(*lst)
+def find_all_valid_options(board_length):
+    domain = list(range(1, board_length + 1))
+    permutations = itertools.permutations(domain)
     result = []
-    for temp in all_combo:
-        if len(set(temp)) == len(temp):
-            result.append(temp)
+    for temp in permutations:
+        result.append(temp)
     return result
 
 
 def caged_csp_model(fpuzz_grid):
-    n = fpuzz_grid[0][0]
-    vars = []
-    operations = {0: "+", 1: "-", 2: "/", 3: "*"}
-    for i in range(n*n):
-        new_var = Variable(i, list(range(1, n+1)))
-        vars.append(new_var)
-    vars_list_of_list = list_to_matrix(vars, n)
+    board_length = fpuzz_grid[0][0]
+    # a list of list of constrains for [var1, 2, 3 ... 9]
+    variable_domain = [i for i in range(1, board_length + 1)]
+    variable_list = [[Variable("element {}{}".format(row, column), variable_domain)
+                      for column in range(board_length)]
+                     for row in range(board_length)]
 
-    all_cords = itertools.product(list(range(n)), list(range(n)))
-    all_satisfying_pairs = pair_distinct_pairs(n)
-    cons = []
-    for coord in all_cords:
-        col_coord = coord[0]
-        row_coord = coord[1]
-        curr_variable = vars_list_of_list[col_coord][row_coord]
-        for following_row in range(row_coord + 1, n):
-            assigned_variable = vars_list_of_list[col_coord][following_row]
-            constraint_name = "var{}{}&var{}{}".format(col_coord+1, row_coord+1, col_coord+1, following_row+1)
+    coor = [i for i in range(board_length)]
+    coordinates = itertools.product(coor, coor)
+    all_satisfying_pairs = pair_distinct_pairs(board_length)
+    constraints = []
+    variable_list_flat = []
+    for coordinate in coordinates:
+        vertic = coordinate[0]
+        horizon = coordinate[1]
+        curr_variable = variable_list[vertic][horizon]
+        variable_list_flat.append(curr_variable)
+        # row: preserve vertic, but change horizons
+        for further_column in range(horizon + 1, board_length):
+            assigned_variable = variable_list[vertic][further_column]
+            constraint_name = "{}{} + {}{}".format(vertic, horizon, vertic, further_column)
             new_constraint = Constraint(constraint_name, [curr_variable, assigned_variable])
             new_constraint.add_satisfying_tuples(tuple(all_satisfying_pairs.copy()))
-            cons.append(new_constraint)
-        for following_col in range(col_coord + 1, n):
-            assigned_variable = vars_list_of_list[following_col][row_coord]
-            constraint_name = "var{}{}&var{}{}".format(col_coord+1, row_coord+1, following_col+1, row_coord+1)
+            constraints.append(new_constraint)
+        # column: preserve horizon
+        for further_row in range(vertic + 1, board_length):
+            assigned_variable = variable_list[further_row][horizon]
+            constraint_name = "{}{} + {}{}".format(vertic, horizon, further_row, horizon)
             new_constraint = Constraint(constraint_name, [curr_variable, assigned_variable])
             new_constraint.add_satisfying_tuples(tuple(all_satisfying_pairs.copy()))
-            cons.append(new_constraint)
+            constraints.append(new_constraint)
 
-    for cons_in_grid in range(1, len(fpuzz_grid)):
-        curr_con_in_grid = fpuzz_grid[cons_in_grid]
-        comp_result = curr_con_in_grid[-2]  # result we need
-        op_i = curr_con_in_grid[-1]         # operation in the block
-        num_vars = len(curr_con_in_grid) - 2
-        nested_list = [list(range(1, n+1)) for _ in range(num_vars)]
-        all_combinations = itertools.product(*nested_list)      # produce all potential assignment variables for existing num of vars
-        variable_list = []
-
-        for var_index in range(num_vars):
-            row_coord = curr_con_in_grid[var_index] // 10 - 1
-            col_coord = curr_con_in_grid[var_index] % 10 - 1
-            variable_list.append(vars_list_of_list[row_coord][col_coord])
-        new_constraint = Constraint("block {}".format(cons_in_grid), variable_list)
+    for constraint_index in range(1, len(fpuzz_grid)):
+        curr_analysis = fpuzz_grid[constraint_index]
+        result_needed = curr_analysis[-2]
+        operation_index = curr_analysis[-1]
+        operation = ['+', '-', '/', '*']
+        num_variables = len(curr_analysis) - 2
+        nested_list = [variable_domain.copy() for i in range(num_variables)]
+        all_combinations = itertools.product(*nested_list)
+        variable_list_tmp_analysis = []
+        for variable_index in range(0, num_variables):
+            row = curr_analysis[variable_index] // 10 - 1
+            col = curr_analysis[variable_index] % 10 - 1
+            variable_list_tmp_analysis.append(variable_list[row][col])
+        new_constraint = Constraint("block {}".format(constraint_index), variable_list_tmp_analysis)
         for combinations in all_combinations:
-            if evaluate(combinations, operations[op_i], comp_result) is True:
+            if evaluate(combinations, operation[operation_index], result_needed):
                 new_constraint.add_satisfying_tuples([combinations])
-        cons.append(new_constraint)
+        constraints.append(new_constraint)
 
-    new_csp = CSP("{} by {} caged csp".format(n, n), vars)
-    for con in cons:
-        new_csp.add_constraint(con)
-    return new_csp, vars_list_of_list
+    new_csp = CSP("{} by {} binary non-equal".format(board_length, board_length), variable_list_flat)
+    for c in constraints:
+        new_csp.add_constraint(c)
+    return new_csp, variable_list
 
 
-def pair_distinct_pairs(board_size):
+def pair_distinct_pairs(board_length):
     satisfying_pair = []
-    sample_list = [i for i in range(1, board_size + 1)]
-    for i in range(1, board_size + 1):
+    sample_list = [i for i in range(1, board_length + 1)]
+    for i in range(1, board_length + 1):
         removed_l = sample_list.copy()
         removed_l.remove(i)
         cartesian_product = itertools.product([i], removed_l)
@@ -243,6 +222,8 @@ def evaluate(nums, op, result):
         if temp_result == result:
             return True
     return False
+
+
 
 
 
